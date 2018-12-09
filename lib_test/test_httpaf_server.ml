@@ -75,6 +75,14 @@ let single_get =
                 , `Empty
                 ]
       ~output:  [(`Response (Response.create `Bad_request)), `Fixed ["400"]]
+  ; "single GET, malformed request, EOF"
+  , `Quick
+  , Simulator.test_server
+      ~handler: (basic_handler "")
+      ~input:   [ `Raw [ "GET / HTTP/1.1\r\nconnection: close\r\nX-Other-Header: EOF_after_this" ]
+                , `Empty
+                ]
+      ~output:  [(`Response (Response.create `Bad_request)), `Fixed ["400"]]
   ]
 ;;
 
