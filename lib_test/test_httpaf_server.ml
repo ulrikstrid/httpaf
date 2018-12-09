@@ -26,7 +26,7 @@ let single_get =
     , Simulator.test_server
         ~handler: (basic_handler "")
         ~input:   [(`Request (Request.create `GET "/")), `Empty]
-        ~output:  [(`Response (Response.create `OK)   ), `Empty]
+        ~output:  [(`Response (Response.create `OK)), `Empty]
   ; "single GET, close connection"
     , `Quick
     , Simulator.test_server
@@ -67,6 +67,14 @@ let single_get =
                   , `Fixed ["This is a test ... that involves multiple chunks"] ];
       Alcotest.(check bool "got eof" !got_eof true);
     end
+  ; "single GET, malformed request"
+  , `Quick
+  , Simulator.test_server
+      ~handler: (basic_handler "")
+      ~input:   [ `Raw [ "GET / HTTP/1.1\r\nconnection: close\r\nX-Other-Header : shouldnt_have_space_before_colon\r\n\r\n" ]
+                , `Empty
+                ]
+      ~output:  [(`Response (Response.create `Bad_request)), `Fixed ["400"]]
   ]
 ;;
 
