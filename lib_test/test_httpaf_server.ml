@@ -26,7 +26,7 @@ let single_get =
     , Simulator.test_server
         ~handler: (basic_handler "")
         ~input:   [(`Request (Request.create `GET "/")), `Empty]
-        ~output:  [(`Response (Response.create `OK)   ), `Empty]
+        ~output:  [(`Response (Response.create `OK)), `Empty]
   ; "single GET, close connection"
     , `Quick
     , Simulator.test_server
@@ -111,11 +111,29 @@ let streaming_response =
       ~output:  [ `Response (Response.create `OK), `Fixed [] ]
   ]
 
-;;
+let malformed_requests_tests = [
+  "single GET, malformed request"
+  , `Quick
+  , Simulator.test_server
+      ~handler: (basic_handler "")
+      ~input:   [ `Raw [ "GET / HTTP/1.1\r\nconnection: close\r\nX-Other-Header : shouldnt_have_space_before_colon\r\n\r\n" ]
+                , `Empty
+                ]
+      ~output:  [(`Response (Response.create `Bad_request)), `Fixed ["400"]]
+  ; "single GET, malformed request, EOF"
+  , `Quick
+  , Simulator.test_server
+      ~handler: (basic_handler "")
+      ~input:   [ `Raw [ "GET / HTTP/1.1\r\nconnection: close\r\nX-Other-Header: EOF_after_this" ]
+                , `Empty
+                ]
+      ~output:  [(`Response (Response.create `Bad_request)), `Fixed ["400"]]
+]
 
 let () =
   Alcotest.run "httpaf server tests"
     [ "single get"        , single_get
     ; "multiple gets"     , multiple_gets
     ; "streaming response", streaming_response
+    ; "malformed requests", malformed_requests_tests
     ]
