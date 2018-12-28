@@ -83,8 +83,6 @@ let read fd buffer =
 open Httpaf
 
 module Server = struct
-  module Config = Server_connection.Config
-
   let create_connection_handler ?(config=Config.default) ~request_handler ~error_handler =
     fun client_addr socket ->
       let fd     = Socket.fd socket in
@@ -153,6 +151,7 @@ end
 
 module Client = struct
   let request
+   ?(config=Config.default)
    ?(writev=Faraday_async.writev_of_fd)
    ?(read=read)
    socket request ~error_handler ~response_handler =
@@ -161,7 +160,7 @@ module Client = struct
     let request_body, conn   =
       Client_connection.request request ~error_handler ~response_handler in
     let read_complete = Ivar.create () in
-    let buffer = Buffer.create 0x1000 in
+    let buffer = Buffer.create config.read_buffer_size in
     let rec reader_thread () =
       match Client_connection.next_read_operation conn with
       | `Read ->
