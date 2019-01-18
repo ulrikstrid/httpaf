@@ -34,10 +34,6 @@
 type error =
   [ `Bad_request | `Bad_gateway | `Internal_server_error | `Exn of exn ]
 
-type response_state =
-  | Waiting   of (unit -> unit) ref
-  | Complete  of Response.t
-  | Streaming of Response.t * [`write] Body.t
 
 type error_handler =
   ?request:Request.t -> error -> (Headers.t -> [`write] Body.t) -> unit
@@ -67,29 +63,33 @@ module Writer = Serialize.Writer
  *  ]}
  *
  * *)
-type t =
+type 'handle t =
   { request                 : Request.t
   ; request_body            : [`read] Body.t
   ; writer                  : Writer.t
   ; response_body_buffer    : Bigstring.t
   ; error_handler           : error_handler
-  ; upgrade_handler         : upgrade_handler
   ; mutable persistent      : bool
-  ; mutable response_state  : response_state
+  ; mutable response_state  : 'handle response_state
   ; mutable error_code      : [`Ok | error ]
   ; mutable wait_for_first_flush : bool
   }
-and upgrade_handler = t -> [`write] Body.t -> unit
+and 'handle upgrade_handler = 'handle t -> [`write] Body.t -> unit
+and 'handle response_state =
+  | Waiting   of (unit -> unit) ref
+  | Complete  of Response.t
+  | Streaming of Response.t * [`write] Body.t
+  | Upgrade of Response.t * [`write] Body.t * ('handle -> 'handle upgrade_handler)
+
 
 let default_waiting = Sys.opaque_identity (fun () -> ())
 
-let create error_handler upgrade_handler request request_body writer response_body_buffer =
+let create error_handler request request_body writer response_body_buffer =
   { request
   ; request_body
   ; writer
   ; response_body_buffer
   ; error_handler
-  ; upgrade_handler
   ; persistent              = Request.persistent_connection request
   ; response_state          = Waiting (ref default_waiting)
   ; error_code              = `Ok
@@ -108,13 +108,22 @@ let response { response_state; _ } =
   match response_state with
   | Waiting _ -> None
   | Streaming(response, _)
-  | Complete (response) -> Some response
+  | Complete (response)
+  | Upgrade (response, _, _)-> Some response
 
 let response_exn { response_state; _ } =
   match response_state with
   | Waiting _            -> failwith "httpaf.Reqd.response_exn: response has not started"
   | Streaming(response, _)
   | Complete (response) -> response
+  | Upgrade (response, _, _) -> response
+
+let response_body_exn { response_state; _ } =
+  match response_state with
+  | Waiting _            -> failwith "httpaf.Reqd.response_exn: response has not started"
+  | Complete _           -> failwith "httpaf.Reqd.response_exn: response already complete"
+  | Streaming(_, body)
+  | Upgrade (_, body, _) -> body
 
 let respond_with_string t response str =
   if t.error_code <> `Ok then
@@ -128,7 +137,7 @@ let respond_with_string t response str =
       t.persistent <- Response.persistent_connection response;
     t.response_state <- Complete response;
     done_waiting when_done_waiting
-  | Streaming _ ->
+  | Streaming _ | Upgrade _ ->
     failwith "httpaf.Reqd.respond_with_string: response already started"
   | Complete _ ->
     failwith "httpaf.Reqd.respond_with_string: response already complete"
@@ -145,7 +154,7 @@ let respond_with_bigstring t response (bstr:Bigstring.t) =
       t.persistent <- Response.persistent_connection response;
     t.response_state <- Complete response;
     done_waiting when_done_waiting
-  | Streaming _ ->
+  | Streaming _ | Upgrade _ ->
     failwith "httpaf.Reqd.respond_with_bigstring: response already started"
   | Complete _ ->
     failwith "httpaf.Reqd.respond_with_bigstring: response already complete"
@@ -162,7 +171,7 @@ let unsafe_respond_with_streaming ~flush_headers_immediately t response =
     t.response_state <- Streaming(response, response_body);
     done_waiting when_done_waiting;
     response_body
-  | Streaming _ ->
+  | Streaming _ | Upgrade _ ->
     failwith "httpaf.Reqd.respond_with_streaming: response already started"
   | Complete _ ->
     failwith "httpaf.Reqd.respond_with_streaming: response already complete"
@@ -172,19 +181,19 @@ let respond_with_streaming ?(flush_headers_immediately=false) t response =
     failwith "httpaf.Reqd.respond_with_streaming: invalid state, currently handling error";
   unsafe_respond_with_streaming ~flush_headers_immediately t response
 
-let unsafe_respond_with_upgrade t response =
+let unsafe_respond_with_upgrade t response upgrade_handler =
   match t.response_state with
   | Waiting when_done_waiting ->
     let response_body = Body.create t.response_body_buffer in
     Writer.write_response t.writer response;
     if t.persistent then
       t.persistent <- Response.persistent_connection response;
-    t.response_state <- Streaming(response, response_body);
+    t.response_state <- Upgrade(response, response_body, upgrade_handler);
     Writer.flush t.writer (fun () ->
-      t.upgrade_handler t response_body;
+      (* upgrade_handler t response_body; *)
       done_waiting when_done_waiting);
     response_body
-  | Streaming _ ->
+  | Streaming _ | Upgrade _ ->
     failwith "httpaf.Reqd.respond_with_streaming: response already started"
   | Complete _ ->
     failwith "httpaf.Reqd.respond_with_streaming: response already complete"
@@ -217,7 +226,7 @@ let report_error t error =
   | Streaming(_response, response_body), `Exn _ ->
     Body.close_writer response_body;
     Writer.close_and_drain t.writer
-  | (Complete _ | Streaming _ | Waiting _) , _ ->
+  | (Complete _ | Streaming _ | Waiting _ | Upgrade _) , _ ->
     (* XXX(seliopou): Once additional logging support is added, log the error
      * in case it is not spurious. *)
     ()
@@ -248,6 +257,8 @@ let on_more_output_available t f =
     Body.when_ready_to_write response_body f
   | Complete _ ->
     failwith "httpaf.Reqd.on_more_output_available: response already complete"
+  | Upgrade _ ->
+    failwith "httpaf.Reqd.on_more_output_available: called on non-streaming state"
 
 let persistent_connection t =
   t.persistent
@@ -261,7 +272,8 @@ let requires_output { response_state; _ } =
   | Streaming (_, response_body) ->
     not (Body.is_closed response_body)
     || Body.has_pending_output response_body
-  | Waiting _ -> true
+  | Waiting _
+  | Upgrade _ -> true
 
 let is_complete t =
   not (requires_input t || requires_output t)

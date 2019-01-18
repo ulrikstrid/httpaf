@@ -75,22 +75,13 @@ let shutdown socket command =
 module Config = Httpaf.Config
 
 module Server = struct
-  let create_connection_handler
-    ?(config=Config.default)
-    ~request_handler
-    ?upgrade_handler
-    ~error_handler =
+  let create_connection_handler ?(config=Config.default) ~request_handler ~error_handler =
     fun client_addr socket ->
       let module Server_connection = Httpaf.Server_connection in
-      let upgrade_handler = match upgrade_handler with
-      | None -> None
-      | Some upgrade_handler -> Some (upgrade_handler client_addr socket)
-      in
       let connection =
         Server_connection.create
           ~config
           ~error_handler:(error_handler client_addr)
-          ?upgrade_handler
           (request_handler client_addr)
       in
 
@@ -130,6 +121,7 @@ module Server = struct
           Lwt.catch
             read_loop_step
             (fun exn ->
+              Printf.eprintf "httpaf YoYoYO  %s\n%!" (Printexc.to_string exn);
               Server_connection.report_exn connection exn;
               Lwt.return_unit))
       in
@@ -144,6 +136,12 @@ module Server = struct
           | `Write io_vectors ->
             writev io_vectors >>= fun result ->
             Server_connection.report_write_result connection result;
+            write_loop_step ()
+
+          | `Upgrade (io_vectors, upgrade_handler) ->
+            writev io_vectors >>= fun result ->
+            let upgrade_handler = upgrade_handler socket in
+            Server_connection.report_upgrade_result connection result upgrade_handler;
             write_loop_step ()
 
           | `Yield ->
@@ -162,6 +160,7 @@ module Server = struct
           Lwt.catch
             write_loop_step
             (fun exn ->
+              Printf.eprintf "httpaf YoYoYO write %s\n%!" (Printexc.to_string exn);
               Server_connection.report_exn connection exn;
               Lwt.return_unit))
       in

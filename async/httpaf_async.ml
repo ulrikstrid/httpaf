@@ -90,21 +90,13 @@ let read fd buffer =
 open Httpaf
 
 module Server = struct
-  let create_connection_handler
-    ?(config=Config.default)
-    ~request_handler
-    ?upgrade_handler
-    ~error_handler =
+  let create_connection_handler ?(config=Config.default) ~request_handler ~error_handler =
     fun client_addr socket ->
       let fd     = Socket.fd socket in
       let writev = Faraday_async.writev_of_fd fd in
       let request_handler = request_handler client_addr in
       let error_handler   = error_handler client_addr in
-      let upgrade_handler = match upgrade_handler with
-      | None -> None
-      | Some upgrade_handler -> Some (upgrade_handler client_addr socket)
-      in
-      let conn = Server_connection.create ~config ~error_handler ?upgrade_handler request_handler in
+      let conn = Server_connection.create ~config ~error_handler request_handler in
       let read_complete = Ivar.create () in
       let buffer = Buffer.create config.read_buffer_size in
       let rec reader_thread () =
@@ -140,6 +132,12 @@ module Server = struct
           (* Log.Global.printf "write(%d)%!" (Fd.to_int_exn fd); *)
           writev iovecs >>> fun result ->
             Server_connection.report_write_result conn result;
+            writer_thread ()
+        | `Upgrade (iovecs, upgrade_handler) ->
+          (* Log.Global.printf "write(%d)%!" (Fd.to_int_exn fd); *)
+          writev iovecs >>> fun result ->
+            let upgrade_handler = upgrade_handler socket in
+            Server_connection.report_upgrade_result conn result upgrade_handler;
             writer_thread ()
         | `Yield ->
           (* Log.Global.printf "write_yield(%d)%!" (Fd.to_int_exn fd); *)

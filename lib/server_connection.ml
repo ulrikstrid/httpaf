@@ -47,8 +47,8 @@ module Reader = Parse.Reader
 module Writer = Serialize.Writer
 
 
-type request_handler = Reqd.t -> unit
-type upgrade_handler = Reqd.upgrade_handler
+type 'handle request_handler = 'handle Reqd.t -> unit
+type 'handle upgrade_handler = 'handle Reqd.upgrade_handler
 
 type error =
   [ `Bad_gateway | `Bad_request | `Internal_server_error | `Exn of exn]
@@ -56,14 +56,13 @@ type error =
 type error_handler =
   ?request:Request.t -> error -> (Headers.t -> [`write] Body.t) -> unit
 
-type t =
+type 'handle t =
   { reader                 : Reader.request
   ; writer                 : Writer.t
   ; response_body_buffer   : Bigstring.t
-  ; request_handler        : request_handler
-  ; upgrade_handler        : upgrade_handler
+  ; request_handler        : 'handle request_handler
   ; error_handler          : error_handler
-  ; request_queue          : Reqd.t Queue.t
+  ; request_queue          : 'handle Reqd.t Queue.t
     (* invariant: If [request_queue] is not empty, then the head of the queue
        has already had [request_handler] called on it. *)
   ; wakeup_writer  : (unit -> unit) list ref
@@ -116,14 +115,7 @@ let default_error_handler ?request:_ error handle =
   Body.close_writer body
 ;;
 
-let default_upgrade_handler _reqd _response_body =
-  ()
-
-let create
-  ?(config=Config.default)
-  ?(error_handler=default_error_handler)
-  ?(upgrade_handler=default_upgrade_handler)
-  request_handler =
+let create ?(config=Config.default) ?(error_handler=default_error_handler) request_handler =
   let
     { Config
     . response_buffer_size
@@ -137,7 +129,7 @@ let create
   let handler request request_body =
     let handle_now = Queue.is_empty request_queue in
     let reqd       =
-      Reqd.create error_handler upgrade_handler request request_body writer response_body_buffer in
+      Reqd.create error_handler request request_body writer response_body_buffer in
     Queue.push reqd request_queue;
     if handle_now then begin
       request_handler reqd;
@@ -148,7 +140,6 @@ let create
   ; writer
   ; response_body_buffer
   ; request_handler = request_handler
-  ; upgrade_handler = upgrade_handler
   ; error_handler   = error_handler
   ; request_queue
   ; wakeup_writer
@@ -268,10 +259,24 @@ let flush_response_body t =
 let next_write_operation t =
   advance_request_queue_if_necessary t;
   flush_response_body t;
-  Writer.next t.writer
+  let next_op = Writer.next t.writer in
+  if is_active t then
+    let reqd = current_reqd_exn t in
+    match next_op, reqd.Reqd.response_state with
+    | `Write iovecs, Upgrade (_, _, upgrade_handler) ->
+      `Upgrade (iovecs, upgrade_handler)
+    | _ -> next_op
+  else next_op
 
 let report_write_result t result =
   Writer.report_result t.writer result
+
+let report_upgrade_result t result upgrade_handler =
+  Writer.report_result t.writer result;
+  if is_active t then
+    let reqd = current_reqd_exn t in
+    let response_body = Reqd.response_body_exn reqd in
+    upgrade_handler reqd response_body
 
 let yield_writer t k =
   if is_active t then begin
