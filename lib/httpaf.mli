@@ -459,8 +459,8 @@ module Body : sig
       consume, or when the input channel has been closed and no further bytes
       will be received by the application.
 
-      Once either of these callbacks have been called, they become inactive. 
-      The application is responsible for scheduling subsequent reads, either 
+      Once either of these callbacks have been called, they become inactive.
+      The application is responsible for scheduling subsequent reads, either
       within the [on_read] callback or by some other mechanism. *)
 
   val write_char : [`write] t -> char -> unit
@@ -481,7 +481,7 @@ module Body : sig
   val schedule_bigstring : [`write] t -> ?off:int -> ?len:int -> Bigstringaf.t -> unit
   (** [schedule_bigstring w ?off ?len bs] schedules [bs] to be transmitted at
       the next opportunity without performing a copy. [bs] should not be
-      modified until a subsequent call to {!flush} has successfully 
+      modified until a subsequent call to {!flush} has successfully
       completed. *)
 
   val flush : [`write] t -> (unit -> unit) -> unit
@@ -690,7 +690,7 @@ module Server_connection : sig
       connection to consume. *)
 
   val read_eof : t -> Bigstringaf.t -> off:int -> len:int -> int
-  (** [read_eof t bigstring ~off ~len] reads bytes of input from the provided 
+  (** [read_eof t bigstring ~off ~len] reads bytes of input from the provided
       range of [bigstring] and returns the number of bytes consumed by the
       connection.  {!read_eof} should be called after {!next_read_operation}
       returns a [`Read] and an EOF has been received from the communication
@@ -760,12 +760,14 @@ module Client_connection : sig
 
   type error_handler = error -> unit
 
+  val create : ?config:Config.t -> error_handler:(error -> unit) -> t
+
   val request
-    :  ?config:Config.t
+    :  t
     -> Request.t
-    -> error_handler:error_handler
+    (* -> error_handler:error_handler *)
     -> response_handler:response_handler
-    -> [`write] Body.t * t
+    -> [`write] Body.t
 
   val next_read_operation : t -> [ `Read | `Close ]
   (** [next_read_operation t] returns a value describing the next operation
@@ -779,7 +781,7 @@ module Client_connection : sig
       connection to consume. *)
 
   val read_eof : t -> Bigstringaf.t -> off:int -> len:int -> int
-  (** [read_eof t bigstring ~off ~len] reads bytes of input from the provided 
+  (** [read_eof t bigstring ~off ~len] reads bytes of input from the provided
       range of [bigstring] and returns the number of bytes consumed by the
       connection.  {!read_eof} should be called after {!next_read_operation}
       returns a [`Read] and an EOF has been received from the communication

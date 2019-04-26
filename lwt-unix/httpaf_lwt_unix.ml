@@ -204,10 +204,13 @@ end
 
 
 module Client = struct
-  let request ?(config=Config.default) socket request ~error_handler ~response_handler =
-    let module Client_connection = Httpaf.Client_connection in
-    let request_body, connection =
-      Client_connection.request ~config request ~error_handler ~response_handler in
+  module Client_connection = Httpaf.Client_connection
+
+  type t = Client_connection.t
+
+  let create_connection ?(config=Config.default) ~error_handler socket =
+    let connection =
+      Client_connection.create ~config ~error_handler in
 
 
     let read_buffer = Buffer.create config.read_buffer_size in
@@ -289,5 +292,8 @@ module Client = struct
       else
         Lwt.return_unit);
 
-    request_body
+    connection
+
+
+  let request = Client_connection.request
 end

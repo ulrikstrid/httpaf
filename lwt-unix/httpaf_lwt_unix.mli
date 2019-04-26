@@ -50,11 +50,18 @@ end
 
 (* For an example, see [examples/lwt_get.ml]. *)
 module Client : sig
-  val request
-    :  ?config          : Httpaf.Config.t
+  type t
+
+  val create_connection
+    : ?config:Config.t
+    -> error_handler:Client_connection.error_handler
     -> Lwt_unix.file_descr
+    -> t
+
+  val request
+    :  t
     -> Request.t
-    -> error_handler    : Client_connection.error_handler
+    (* -> error_handler    : Client_connection.error_handler *)
     -> response_handler : Client_connection.response_handler
     -> [`write] Httpaf.Body.t
 end
