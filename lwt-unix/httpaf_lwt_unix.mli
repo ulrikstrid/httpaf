@@ -65,4 +65,6 @@ module Client : sig
     -> [`write] Httpaf.Body.t
 
   val shutdown : t -> unit
+
+  val is_closed : t -> bool
 end

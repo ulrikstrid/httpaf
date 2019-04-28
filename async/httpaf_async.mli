@@ -29,4 +29,6 @@ module Client : sig
     -> [`write] Body.t
 
   val shutdown : t -> unit
+
+  val is_closed : t -> bool
 end
