@@ -624,13 +624,13 @@ module Client_connection = struct
     let response = Response.create `OK in
 
     (* Single GET *)
-    let t = create ?config:None ~error_handler:no_error_handler in
+    let t = create ?config:None in
     let body =
       request
         t
         request'
         ~response_handler:(default_response_handler response)
-        (* ~error_handler:no_error_handler *)
+        ~error_handler:no_error_handler
     in
     Body.close_writer body;
     write_request t request';
@@ -642,13 +642,13 @@ module Client_connection = struct
         ~headers:(Headers.of_list ["connection", "close"])
         `GET "/"
     in
-    let t = create ?config:None ~error_handler:no_error_handler in
+    let t = create ?config:None in
     let body =
       request
         t
         request_close
         ~response_handler:(default_response_handler response)
-        (* ~error_handler:no_error_handler *)
+        ~error_handler:no_error_handler
     in
     Body.close_writer body;
     write_request t request_close;
@@ -659,13 +659,13 @@ module Client_connection = struct
     let response =
       Response.create `OK ~headers:(Headers.of_list [ "connection", "close" ])
     in
-    let t = create ?config:None ~error_handler:no_error_handler in
+    let t = create ?config:None in
     let body =
       request
         t
         request'
         ~response_handler:(default_response_handler response)
-        (* ~error_handler:no_error_handler *)
+        ~error_handler:no_error_handler
     in
     Body.close_writer body;
     write_request t request';
@@ -679,13 +679,13 @@ module Client_connection = struct
     let response =
       Response.create `OK ~headers:(Headers.of_list [ "transfer-encoding", "chunked" ])
     in
-    let t = create ?config:None ~error_handler:no_error_handler in
+    let t = create ?config:None in
     let body =
       request
         t
         request'
         ~response_handler:(default_response_handler response)
-        (* ~error_handler:no_error_handler *)
+        ~error_handler:no_error_handler
     in
     Body.close_writer body;
     write_request t request';
@@ -698,18 +698,15 @@ module Client_connection = struct
     let response = Response.create `OK in (* not actually writen to the channel *)
 
     let error_message = ref None in
-    let t = create ?config:None ~error_handler:(function
-        | `Malformed_response msg -> error_message := Some msg
-        | _ -> assert false)
-    in
+    let t = create ?config:None in
     let body =
       request
         t
         request'
         ~response_handler:(default_response_handler response)
-        (* ~error_handler:(function
+        ~error_handler:(function
           | `Malformed_response msg -> error_message := Some msg
-          | _ -> assert false) *)
+          | _ -> assert false)
     in
     Body.close_writer body;
     write_request t request';
@@ -727,13 +724,13 @@ module Client_connection = struct
     let response =
       Response.create ~headers:(Headers.of_list [ "content-length", "0" ]) `OK
     in
-    let t = create ?config:None ~error_handler:no_error_handler in
+    let t = create ?config:None in
     let body =
       request
         t
         request'
         ~response_handler:(default_response_handler response)
-        (* ~error_handler:no_error_handler *)
+        ~error_handler:no_error_handler
     in
     Body.close_writer body;
     write_request t request';
@@ -743,7 +740,7 @@ module Client_connection = struct
         t
         request'
         ~response_handler:(default_response_handler response)
-        (* ~error_handler:no_error_handler *)
+        ~error_handler:no_error_handler
     in
     Body.close_writer body';
     write_request t request';
@@ -755,13 +752,13 @@ module Client_connection = struct
     let response =
       Response.create ~headers:(Headers.of_list [ "content-length", "0" ]) `OK
     in
-    let t = create ?config:None ~error_handler:no_error_handler in
+    let t = create ?config:None in
     let body =
       request
         t
         request'
         ~response_handler:(default_response_handler response)
-        (* ~error_handler:no_error_handler *)
+        ~error_handler:no_error_handler
     in
     Body.close_writer body;
     write_request t request';
@@ -776,7 +773,7 @@ module Client_connection = struct
         ~response_handler:(fun response body ->
           Format.eprintf "def me getting called...@.";
           (default_response_handler response' response body))
-        (* ~error_handler:no_error_handler *)
+        ~error_handler:no_error_handler
     in
     Body.close_writer body';
     write_request t request';
@@ -801,7 +798,9 @@ let () =
     ]
 
 (*
- * TODO: test pipelining with more pending requests that aren't closed yet
+ * TODO:
+ * - test pipelining with more pending requests that aren't closed yet
  * (and shouldn't be sent)
+ * - test error handling
  *
  *)
