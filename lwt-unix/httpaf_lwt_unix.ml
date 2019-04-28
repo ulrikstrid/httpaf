@@ -296,4 +296,6 @@ module Client = struct
 
 
   let request = Client_connection.request
+
+  let shutdown = Client_connection.shutdown
 end
